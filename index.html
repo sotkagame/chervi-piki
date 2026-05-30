@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Черви-Пики — прототип</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:#0a1813; color:#F2E9D8;
+    display:flex; align-items:center; justify-content:center;
+    min-height:100dvh; padding:14px;
+    user-select:none; -webkit-user-select:none;
+  }
+  .board {
+    width:100%; max-width:440px;
+    background:#10241c; border:1px solid #C9A961; border-radius:20px;
+    padding:20px 18px 24px;
+    display:flex; flex-direction:column;
+  }
+  .title { text-align:center; font-size:13px; letter-spacing:.32em; color:#C9A961; margin-bottom:14px; }
+  .title b { font-weight:600; }
+  .stats { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+  .stat { text-align:center; flex:1; }
+  .stat .lbl { font-size:10px; letter-spacing:.12em; color:#C9A961; }
+  .stat .val { font-size:28px; font-weight:600; line-height:1.1; }
+  #bank { color:#F4D77A; }
+  .cardwrap { display:flex; align-items:center; justify-content:center; height:230px; perspective:900px; }
+  .card {
+    width:152px; height:212px; border-radius:14px;
+    background:#7C1F2B; border:2px solid #C9A961;
+    display:flex; align-items:center; justify-content:center; position:relative;
+  }
+  .face { font-size:74px; font-weight:600; line-height:1; color:#C9A961; }
+  .rank { position:absolute; top:10px; left:13px; font-size:22px; font-weight:600; }
+  .rank2 { position:absolute; bottom:10px; right:13px; font-size:22px; font-weight:600; transform:rotate(180deg); }
+  .hint { text-align:center; min-height:22px; font-size:14px; color:#C9A961; margin:8px 0 14px; }
+  .controls { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  button {
+    font-family:inherit; cursor:pointer; border-radius:14px; font-weight:600;
+    transition:transform .05s ease; touch-action:manipulation;
+  }
+  button:active { transform:scale(0.97); }
+  .btn-red { padding:20px 0; font-size:19px; color:#fff; background:#B63A47; border:1px solid #E4949E; }
+  .btn-black { padding:20px 0; font-size:19px; color:#F2E9D8; background:#1b1b1b; border:1px solid #6b6b6b; }
+  .btn-cash { width:100%; margin-top:12px; padding:16px 0; font-size:16px; color:#1b1b1b; background:#D4AF37; border:none; }
+  button:disabled { opacity:.45; }
+  .meta { display:flex; justify-content:space-between; margin-top:14px; font-size:11px; color:#9bb3a6; }
+  .wallet { text-align:center; margin-top:12px; font-size:13px; color:#C9A961; }
+</style>
+</head>
+<body>
+  <div class="board" id="board">
+    <div class="title"><b>ЧЕРВИ</b> ♥ &nbsp;·&nbsp; ♠ <b>ПИКИ</b></div>
+
+    <div class="stats">
+      <div class="stat"><div class="lbl">СЕРИЯ</div><div class="val" id="streak">0</div></div>
+      <div class="stat"><div class="lbl">БАНК</div><div class="val" id="bank">0</div></div>
+      <div class="stat"><div class="lbl">РЕКОРД</div><div class="val" id="record">0</div></div>
+    </div>
+
+    <div class="cardwrap">
+      <div class="card" id="card">
+        <div class="face" id="face">♠</div>
+        <div class="rank" id="rank"></div>
+        <div class="rank2" id="rank2"></div>
+      </div>
+    </div>
+
+    <div class="hint" id="hint">Угадай цвет следующей карты</div>
+
+    <div class="controls">
+      <button class="btn-red" id="red">Красное ♥</button>
+      <button class="btn-black" id="black">Чёрное ♠</button>
+    </div>
+    <button class="btn-cash" id="cash">Забрать банк</button>
+
+    <div class="meta">
+      <span>🔒 несгораемая: <span id="safe">0</span></span>
+      <span>следующая: <span id="next">100</span></span>
+      <span>в колоде: <span id="left">36</span></span>
+    </div>
+    <div class="wallet" id="wallet">Кошелёк: 0</div>
+  </div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var elStreak=$('streak'),elBank=$('bank'),elRecord=$('record'),elFace=$('face'),elRank=$('rank'),elRank2=$('rank2'),card=$('card');
+  var elHint=$('hint'),elSafe=$('safe'),elNext=$('next'),elLeft=$('left'),elWallet=$('wallet'),board=$('board');
+  var bRed=$('red'),bBlack=$('black'),bCash=$('cash');
+
+  var LADDER=[0,100,250,500,1000,2000,4000,7500,12500,20000,35000,55000,85000,130000,200000,300000];
+  var CHECKPOINTS={3:1,6:1,10:1,14:1};
+  var RANKS=['6','7','8','9','10','J','Q','K','A'];
+  var SUITS=[{s:'♥',c:'red'},{s:'♦',c:'red'},{s:'♠',c:'black'},{s:'♣',c:'black'}];
+
+  var fmt=function(n){return Math.round(n).toLocaleString('ru-RU');};
+  var bankAt=function(k){if(k<LADDER.length)return LADDER[k];var v=LADDER[LADDER.length-1];for(var i=LADDER.length;i<=k;i++)v=Math.round(v*1.5/100)*100;return v;};
+
+  var shoe=[],streak=0,bank=0,safe=0,wallet=0,record=0,running=true,busy=false;
+
+  function buildShoe(){var d=[];for(var i=0;i<RANKS.length;i++)for(var j=0;j<SUITS.length;j++)d.push({r:RANKS[i],s:SUITS[j].s,c:SUITS[j].c});for(var k=d.length-1;k>0;k--){var m=Math.floor(Math.random()*(k+1));var t=d[k];d[k]=d[m];d[m]=t;}return d;}
+
+  var AC;function beep(f,dur,type,vol){try{if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();var o=AC.createOscillator(),g=AC.createGain();o.type=type||'sine';o.frequency.value=f;g.gain.value=vol||0.07;o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+dur);}catch(e){}}
+
+  function refresh(){
+    elStreak.textContent=streak;elBank.textContent=fmt(bank);elRecord.textContent=record;
+    elSafe.textContent=fmt(safe);elNext.textContent=fmt(bankAt(streak+1));elLeft.textContent=shoe.length;elWallet.textContent='Кошелёк: '+fmt(wallet);
+    bCash.disabled=(bank<=0);
+    elBank.style.color=(streak>=12)?'#FF8A65':'#F4D77A';
+  }
+
+  function showCard(c,up){
+    if(up){
+      card.style.background='#FBF7EC';card.style.borderColor=(c.c==='red')?'#B63A47':'#222';
+      var col=(c.c==='red')?'#B63A47':'#1b1b1b';
+      elFace.textContent=c.s;elFace.style.color=col;
+      elRank.textContent=c.r+' '+c.s;elRank.style.color=col;
+      elRank2.textContent=c.r+' '+c.s;elRank2.style.color=col;
+    }else{
+      card.style.background='#7C1F2B';card.style.borderColor='#C9A961';
+      elFace.textContent='♠';elFace.style.color='#C9A961';elRank.textContent='';elRank2.textContent='';
+    }
+  }
+
+  function flip(half){
+    if(!card.animate){half();return Promise.resolve();}
+    return card.animate([{transform:'rotateY(0deg)'},{transform:'rotateY(90deg)'}],{duration:130,easing:'ease-in'}).finished.then(half).then(function(){return card.animate([{transform:'rotateY(90deg)'},{transform:'rotateY(0deg)'}],{duration:130,easing:'ease-out'}).finished;});
+  }
+  function flash(col){if(board.animate)board.animate([{borderColor:col},{borderColor:'#C9A961'}],{duration:500,easing:'ease-out'});}
+  function setRunUI(on){bRed.disabled=!on;bBlack.disabled=!on;}
+
+  function guess(color){
+    if(busy||!running)return;busy=true;beep(420,0.05,'square',0.04);
+    if(shoe.length===0){shoe=buildShoe();elHint.textContent='Свежая колода';}
+    var c=shoe.pop();
+    Promise.resolve(flip(function(){showCard(c,true);})).then(function(){
+      if(c.c===color){
+        streak++;bank=bankAt(streak);if(CHECKPOINTS[streak])safe=bank;if(streak>record)record=streak;
+        beep(660,0.08,'sine',0.06);setTimeout(function(){beep(880,0.10,'sine',0.06);},70);flash('#1d9e75');
+        if(streak>=12)elHint.textContent='Руки потеют. Ещё одну?';
+        else if(streak>=9)elHint.textContent='Уже жалко терять…';
+        else if(streak>=6)elHint.textContent='Хм. Забрать или дальше?';
+        else elHint.textContent='Изи. Ещё одну?';
+        refresh();busy=false;
+      }else{
+        beep(160,0.35,'sawtooth',0.07);flash('#a32d2d');
+        var kept=safe;wallet+=kept;running=false;
+        elHint.innerHTML='Мимо. Прошёл карт: '+streak+' · в кошелёк: '+fmt(kept)+(kept>0?' (несгораемая)':'');
+        refresh();endRun('Снова');busy=false;
+      }
+    });
+  }
+
+  function cashOut(){
+    if(busy||!running||bank<=0)return;busy=true;wallet+=bank;running=false;
+    beep(740,0.09,'sine',0.06);setTimeout(function(){beep(990,0.12,'sine',0.06);},80);setTimeout(function(){beep(1240,0.14,'sine',0.05);},170);flash('#D4AF37');
+    elHint.innerHTML='Забрал '+fmt(bank)+'. Серия: '+streak+'. В кошельке: '+fmt(wallet)+'.';
+    refresh();endRun('Ещё забег');busy=false;
+  }
+
+  function endRun(label){setRunUI(false);bCash.disabled=false;bCash.textContent=label;bCash.onclick=function(){newRun();bCash.textContent='Забрать банк';bCash.onclick=cashOut;};}
+  function newRun(){streak=0;bank=0;safe=0;running=true;busy=false;showCard(null,false);setRunUI(true);elHint.textContent='Угадай цвет следующей карты';refresh();}
+
+  bRed.onclick=function(){guess('red');};
+  bBlack.onclick=function(){guess('black');};
+  bCash.onclick=cashOut;
+
+  shoe=buildShoe();showCard(null,false);refresh();
+})();
+</script>
+</body>
+</html>
